@@ -60,14 +60,14 @@ public:
     shared_ptr<Texture> texture2;
 
     //pitch and yaw info
+    float pitch = 0;
+    float yaw = 90;
     vec3 eye = vec3(0.0, 0.0 , 0.0);
     vec3 lookAtPoint = vec3(0.0, 0.0, 1.0);
     vec3 upVector = vec3(0.0, 1.0, 0.0);
-    float pitch = 0;
-    float yaw = 0;
-    float maxScrollX;
-    float maxScrollY;
-    float currPosX = 0;
+    float maxScrollX = 640;
+    float maxScrollY = 480;
+    float currPosX = (90*maxScrollX)/180;
     float currPosY = 0;
 
     //skybox data
