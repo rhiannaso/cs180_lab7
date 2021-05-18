@@ -13,6 +13,7 @@
 #include "MatrixStack.h"
 #include "WindowManager.h"
 #include "Texture.h"
+#include "stb_image.h"
 
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader/tiny_obj_loader.h>
@@ -37,10 +38,15 @@ public:
 	//Our shader program for textures
 	std::shared_ptr<Program> texProg;
 
+    //Our shader program for skybox
+	std::shared_ptr<Program> cubeProg;
+
 	//our geometry
 	shared_ptr<Shape> sphere;
 
 	shared_ptr<Shape> theBunny;
+
+    shared_ptr<Shape> cube;
 
 	//global data for ground plane - direct load constant defined CPU data to GPU (not obj)
 	GLuint GrndBuffObj, GrndNorBuffObj, GrndTexBuffObj, GIndxBuffObj;
@@ -55,7 +61,7 @@ public:
 
     //pitch and yaw info
     vec3 eye = vec3(0.0, 0.0 , 0.0);
-    vec3 lookAtPoint = vec3(0.0, 0.0, 0.0);
+    vec3 lookAtPoint = vec3(0.0, 0.0, 1.0);
     vec3 upVector = vec3(0.0, 1.0, 0.0);
     float pitch = 0;
     float yaw = 0;
@@ -63,6 +69,17 @@ public:
     float maxScrollY;
     float currPosX = 0;
     float currPosY = 0;
+
+    //skybox data
+    vector<std::string> faces {
+        "vc_rt.tga",
+        "vc_lf.tga",
+        "vc_up.jpg",
+        "vc_dn.jpg",
+        "vc_ft.tga",
+        "vc_bk.tga"
+    }; 
+    unsigned int cubeMapTexture;
 
 	//global data (larger program should be encapsulated)
 	vec3 gMin;
@@ -212,7 +229,42 @@ public:
         texture2->init();
         texture2->setUnit(2);
         texture2->setWrapModes(GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE); 
+
+        // Initialize the GLSL program that we will use for texture mapping
+		cubeProg = make_shared<Program>();
+		cubeProg->setVerbose(true);
+		cubeProg->setShaderNames(resourceDirectory + "/cube_vert.glsl", resourceDirectory + "/cube_frag.glsl");
+		cubeProg->init();
+		cubeProg->addUniform("P");
+		cubeProg->addUniform("V");
+		cubeProg->addUniform("M");
+		cubeProg->addUniform("skybox");
+		cubeProg->addAttribute("vertPos");
+		cubeProg->addAttribute("vertNor");
 	}
+
+    unsigned int createSky(string dir, vector<string> faces) {
+        unsigned int textureID;
+        glGenTextures(1, &textureID);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
+        int width, height, nrChannels;
+        stbi_set_flip_vertically_on_load(false);
+        for(GLuint i = 0; i < faces.size(); i++) {
+            unsigned char *data = stbi_load((dir+faces[i]).c_str(), &width, &height, &nrChannels, 0);
+            if (data) {
+                glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+            } else {
+                cout << "failed to load: " << (dir+faces[i]).c_str() << endl;
+            }
+        }
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+        cout << " creating cube map any errors : " << glGetError() << endl;
+        return textureID;
+    }
 
 	void initGeom(const std::string& resourceDirectory)
 	{
@@ -253,8 +305,22 @@ public:
 			theBunny->init();
 		}
 
+        rc = tinyobj::LoadObj(TOshapesB, objMaterialsB, errStr, (resourceDirectory + "/cube.obj").c_str());
+		if (!rc) {
+			cerr << errStr << endl;
+		} else {
+			
+			cube = make_shared<Shape>();
+			cube->createShape(TOshapesB[0]);
+			cube->measure();
+			cube->init();
+		}
+
 		//code to load in the ground plane (CPU defined data passed to GPU)
 		initGround();
+
+        cubeMapTexture = createSky("../resources/cracks/", faces);
+
 	}
 
 	//directly pass quad for the ground to the GPU
@@ -547,13 +613,37 @@ public:
 		//switch shaders to the texture mapping shader and draw the ground
 		texProg->bind();
 		glUniformMatrix4fv(texProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
-        // glUniformMatrix4fv(texProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
 		glUniformMatrix4fv(texProg->getUniform("V"), 1, GL_FALSE, value_ptr(V));
 		glUniformMatrix4fv(texProg->getUniform("M"), 1, GL_FALSE, value_ptr(Model->topMatrix()));
 				
-		drawGround(texProg);
+		//drawGround(texProg);
 
 		texProg->unbind();
+
+        //to draw the sky box bind the right shader
+        cubeProg->bind();
+        //set the projection matrix - can use the same one
+        glUniformMatrix4fv(cubeProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
+        //set the depth function to always draw the box!
+        glDepthFunc(GL_LEQUAL);
+        //set up view matrix to include your view transforms
+        //(your code likely will be different depending
+        glUniformMatrix4fv(cubeProg->getUniform("V"), 1, GL_FALSE, value_ptr(V) );
+        //set and send model transforms - likely want a bigger cube
+        Model->pushMatrix();
+        Model->scale(vec3(15, 15, 15));
+        glUniformMatrix4fv(cubeProg->getUniform("M"), 1, GL_FALSE,value_ptr(Model->topMatrix()));
+        Model->popMatrix();
+        //bind the cube map texture
+        glBindTexture(GL_TEXTURE_CUBE_MAP, cubeMapTexture);
+
+        //draw the actual cube
+        cube->draw(cubeProg);
+
+        //set the depth test back to normal!
+        glDepthFunc(GL_LESS);
+        //unbind the shader for the skybox
+        cubeProg->unbind(); 
 		
 		//animation update example
 		sTheta = sin(glfwGetTime());
