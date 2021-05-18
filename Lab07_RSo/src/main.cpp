@@ -53,6 +53,17 @@ public:
     shared_ptr<Texture> texture1;
     shared_ptr<Texture> texture2;
 
+    //pitch and yaw info
+    vec3 eye = vec3(0.0, 0.0 , 0.0);
+    vec3 lookAtPoint = vec3(0.0, 0.0, 0.0);
+    vec3 upVector = vec3(0.0, 1.0, 0.0);
+    float pitch = 0;
+    float yaw = 0;
+    float maxScrollX;
+    float maxScrollY;
+    float currPosX = 0;
+    float currPosY = 0;
+
 	//global data (larger program should be encapsulated)
 	vec3 gMin;
 	float gRot = 0;
@@ -110,9 +121,38 @@ public:
 		}
 	}
 
+    void scrollCallback(GLFWwindow *window, double in_deltaX, double in_deltaY)
+	{
+        currPosX += in_deltaX;
+        currPosY += in_deltaY;
+        mapAngle(currPosX, currPosY);
+        computeLookAt();
+	}
+
+    void mapAngle(float posX, float posY) {
+        yaw = (180/maxScrollX)*posX;
+        pitch = (180/maxScrollY)*posY;
+    }
+
+    float DegToRad(float degrees) {
+        return degrees*(pi<float>()/180.0);
+    }
+
+    void computeLookAt() {
+        float radius = 1.0;
+        float phi = DegToRad(pitch);
+        float theta = DegToRad(yaw);
+        float x = radius*cos(phi)*cos(theta);
+        float y = radius*sin(phi);
+        float z = radius*cos(phi)*cos((pi<float>()/2.0)-theta);
+        lookAtPoint = vec3(x, y, z);
+    }
+
 	void resizeCallback(GLFWwindow *window, int width, int height)
 	{
 		glViewport(0, 0, width, height);
+        maxScrollX = width;
+        maxScrollY = height;
 	}
 
 	void init(const std::string& resourceDirectory)
@@ -446,6 +486,8 @@ public:
 		int width, height;
 		glfwGetFramebufferSize(windowManager->getHandle(), &width, &height);
 		glViewport(0, 0, width, height);
+        maxScrollX = width;
+        maxScrollY = height;
 
 		// Clear framebuffer
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -470,10 +512,12 @@ public:
 		//global rotate (the whole scene )
 		View->rotate(gRot, vec3(0, 1, 0));
 
+        auto V = lookAt(eye, lookAtPoint, upVector);
+
 		// Draw the scene
 		texProg->bind();
 		glUniformMatrix4fv(texProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
-		glUniformMatrix4fv(texProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
+		glUniformMatrix4fv(texProg->getUniform("V"), 1, GL_FALSE, value_ptr(V));
 		glUniform3f(texProg->getUniform("lightPos"), lightTrans, 2.0, 2.9);
 
 		// draw the array of bunnies
@@ -503,7 +547,8 @@ public:
 		//switch shaders to the texture mapping shader and draw the ground
 		texProg->bind();
 		glUniformMatrix4fv(texProg->getUniform("P"), 1, GL_FALSE, value_ptr(Projection->topMatrix()));
-		glUniformMatrix4fv(texProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
+        // glUniformMatrix4fv(texProg->getUniform("V"), 1, GL_FALSE, value_ptr(View->topMatrix()));
+		glUniformMatrix4fv(texProg->getUniform("V"), 1, GL_FALSE, value_ptr(V));
 		glUniformMatrix4fv(texProg->getUniform("M"), 1, GL_FALSE, value_ptr(Model->topMatrix()));
 				
 		drawGround(texProg);
