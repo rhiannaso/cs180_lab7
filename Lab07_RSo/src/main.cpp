@@ -140,7 +140,7 @@ public:
 
     void scrollCallback(GLFWwindow *window, double in_deltaX, double in_deltaY)
 	{
-        currPosX += in_deltaX;
+        currPosX -= in_deltaX;
         currPosY += in_deltaY;
         mapAngle(currPosX, currPosY);
         computeLookAt();
