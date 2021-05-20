@@ -61,14 +61,10 @@ public:
 
     //pitch and yaw info
     float pitch = 0;
-    float yaw = 90;
+    float yaw = pi<float>()/2.0;
     vec3 eye = vec3(0.0, 0.0 , 0.0);
     vec3 lookAtPoint = vec3(0.0, 0.0, 1.0);
     vec3 upVector = vec3(0.0, 1.0, 0.0);
-    float maxScrollX = 640;
-    float maxScrollY = 480;
-    float currPosX = (90*maxScrollX)/180;
-    float currPosY = 0;
 
     //skybox data
     vector<std::string> faces {
@@ -140,36 +136,22 @@ public:
 
     void scrollCallback(GLFWwindow *window, double in_deltaX, double in_deltaY)
 	{
-        currPosX -= in_deltaX;
-        currPosY += in_deltaY;
-        mapAngle(currPosX, currPosY);
+        yaw -= in_deltaX/100;
+        pitch += in_deltaY/100;
         computeLookAt();
 	}
 
-    void mapAngle(float posX, float posY) {
-        yaw = (180/maxScrollX)*posX;
-        pitch = (180/maxScrollY)*posY;
-    }
-
-    float DegToRad(float degrees) {
-        return degrees*(pi<float>()/180.0);
-    }
-
     void computeLookAt() {
         float radius = 1.0;
-        float phi = DegToRad(pitch);
-        float theta = DegToRad(yaw);
-        float x = radius*cos(phi)*cos(theta);
-        float y = radius*sin(phi);
-        float z = radius*cos(phi)*cos((pi<float>()/2.0)-theta);
+        float x = radius*cos(pitch)*cos(yaw);
+        float y = radius*sin(pitch);
+        float z = radius*cos(pitch)*cos((pi<float>()/2.0)-yaw);
         lookAtPoint = vec3(x, y, z);
     }
 
 	void resizeCallback(GLFWwindow *window, int width, int height)
 	{
 		glViewport(0, 0, width, height);
-        maxScrollX = width;
-        maxScrollY = height;
 	}
 
 	void init(const std::string& resourceDirectory)
@@ -552,8 +534,6 @@ public:
 		int width, height;
 		glfwGetFramebufferSize(windowManager->getHandle(), &width, &height);
 		glViewport(0, 0, width, height);
-        maxScrollX = width;
-        maxScrollY = height;
 
 		// Clear framebuffer
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
